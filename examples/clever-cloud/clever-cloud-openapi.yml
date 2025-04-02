@@ -1,0 +1,231 @@
+openapi: 3.0.0
+info:
+  title: Clever Cloud API
+  description: 'API for managing Clever Cloud resources and services'
+  version: '2.0'
+  contact:
+    name: Clever Cloud
+    url: https://www.clever-cloud.com
+    email: support@clever-cloud.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+servers:
+  - url: https://api.clever-cloud.com/v2
+    description: Clever Cloud API v2
+  - url: https://api-bridge.clever-cloud.com/v2
+    description: Clever Cloud API Bridge (for token authentication)
+paths:
+  /self:
+    get:
+      tags:
+      - User
+      summary: Get current user information
+      description: Returns information about the authenticated user
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: User information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          description: Unauthorized
+  /summary:
+    get:
+      tags:
+      - User
+      summary: Get user summary
+      description: Returns a summary of the user's resources and organizations
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: User summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Summary'
+        '401':
+          description: Unauthorized
+  /organisations/{organisationId}/applications:
+    get:
+      tags:
+      - Applications
+      summary: List applications
+      description: Returns a list of applications for the specified organization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: organisationId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Organization ID
+      responses:
+        '200':
+          description: List of applications
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Application'
+        '401':
+          description: Unauthorized
+        '404':
+          description: Organization not found
+  /organisations/{organisationId}/applications/{applicationId}:
+    get:
+      tags:
+      - Applications
+      summary: Get application details
+      description: Returns details of a specific application
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: organisationId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Organization ID
+        - name: applicationId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Application ID
+      responses:
+        '200':
+          description: Application details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Application'
+        '401':
+          description: Unauthorized
+        '404':
+          description: Application not found
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: API Token obtained from Clever Cloud
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          description: User ID
+        email:
+          type: string
+          format: email
+          description: User email
+        name:
+          type: string
+          description: User name
+        creationDate:
+          type: string
+          format: date-time
+          description: Account creation date
+        organisations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Organisation'
+          description: List of organizations the user belongs to
+    Organisation:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Organization ID
+        name:
+          type: string
+          description: Organization name
+        description:
+          type: string
+          description: Organization description
+        ownerId:
+          type: string
+          description: ID of the organization owner
+    Summary:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+          description: User information
+        organisations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Organisation'
+          description: List of organizations
+    Application:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Application ID
+        name:
+          type: string
+          description: Application name
+        description:
+          type: string
+          description: Application description
+        zone:
+          type: string
+          description: Deployment zone
+        instance:
+          $ref: '#/components/schemas/Instance'
+          description: Instance configuration
+        deployments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Deployment'
+          description: List of deployments
+        creationDate:
+          type: string
+          format: date-time
+          description: Application creation date
+        status:
+          type: string
+          enum: [running, stopped, deploying, error]
+          description: Application status
+    Instance:
+      type: object
+      properties:
+        type:
+          type: string
+          description: Instance type
+        flavor:
+          type: string
+          description: Instance flavor (size)
+        minInstances:
+          type: integer
+          description: Minimum number of instances
+        maxInstances:
+          type: integer
+          description: Maximum number of instances
+    Deployment:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Deployment ID
+        commit:
+          type: string
+          description: Git commit ID
+        date:
+          type: string
+          format: date-time
+          description: Deployment date
+        status:
+          type: string
+          enum: [success, failure, in_progress]
+          description: Deployment status

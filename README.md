@@ -21,16 +21,38 @@ A comprehensive utility that converts any OpenAPI/Swagger specification into a f
 To generate an MCP server from any OpenAPI specification:
 
 ```bash
-jbang SwaggerToMcpGenerator.java path/to/swagger.json GeneratedMcpServer
+jbang SwaggerToMcpGenerator.java path/to/swagger.json GeneratedMcpServer [options]
 ```
 
-This will create a new file `GeneratedMcpServer.java` that implements an MCP server with tools for each API endpoint defined in the swagger file.
+Parameters:
+- `path/to/swagger.json`: Path to the OpenAPI/Swagger specification file
+- `GeneratedMcpServer`: Name of the output Java file (without .java extension)
+
+Options:
+- `--server-index <index>`: Index of the server to use from the OpenAPI specification (0-based)
+- `--server-url <url>`: URL of the server to use (overrides server-index)
+
+This will create a new file `GeneratedMcpServer.java` that implements an MCP server with tools for each API endpoint defined in the swagger file. The generator will emit a warning if multiple servers are defined in the OpenAPI specification and none is explicitly selected.
 
 ## Running the Generated MCP Server
 
 To run the generated MCP server:
 
 ```bash
+jbang GeneratedMcpServer.java
+```
+
+### Server Selection
+
+The generated MCP server includes constants for all servers defined in the OpenAPI specification, allowing you to choose which server to use at runtime. By default, the first server in the list is used, but you can select a specific server using environment variables:
+
+```bash
+# Select server by index (0-based)
+export SERVER_INDEX=1
+
+# Or select server by URL
+export SERVER_URL="https://api-example.com/v2"
+
 jbang GeneratedMcpServer.java
 ```
 
@@ -89,6 +111,75 @@ current_weather: true
 wind_speed_unit: ms
 ```
 
+#### Generating the Clever Cloud MCP Server
+
+```bash
+cd examples/clever-cloud
+jbang ../../SwaggerToMcpGenerator.java clever-cloud-openapi.yml CleverCloudMcpServer --server-index 1
+```
+
+Note that we're using `--server-index 1` (the second server in the list) which is the API Bridge URL required for token authentication. This will generate `CleverCloudMcpServer.java` with MCP tools for managing Clever Cloud resources.
+
+Alternatively, you can specify the server URL directly:
+
+```bash
+cd examples/clever-cloud
+jbang ../../SwaggerToMcpGenerator.java clever-cloud-openapi.yml CleverCloudMcpServer --server-url https://api-bridge.clever-cloud.com/v2
+```
+
+#### Running the Clever Cloud MCP Server
+
+```bash
+cd examples/clever-cloud
+# Set your Clever Cloud API token
+export BEARER_TOKEN=your_api_token
+jbang CleverCloudMcpServer.java
+```
+
+#### Generating a Clever Cloud API Token
+
+To generate an API token for Clever Cloud, you'll need to use the [Clever Tools CLI](https://github.com/CleverCloud/clever-tools):
+
+```bash
+# Install Clever Tools (if not already installed)
+npm install -g clever-tools
+
+# Login to Clever Cloud
+clever login
+
+# Enable the tokens feature
+clever features enable tokens
+
+# Create a token (with optional expiration)
+clever tokens create "MCP Server Token"
+clever tokens create "Temporary Token" --expiration 24h
+```
+
+You can also list and revoke tokens:
+
+```bash
+# List existing tokens
+clever tokens -F json
+
+# Revoke a token
+clever tokens revoke api_tokens_xxx
+```
+
+#### Using the Clever Cloud MCP Server
+
+The generated MCP server provides tools for interacting with the Clever Cloud API. Available tools include:
+
+- `get_self`: Get current user information
+- `get_summary`: Get user summary
+- `get_organisations__organisationId__applications`: List applications for an organization
+- `get_organisations__organisationId__applications__applicationId_`: Get application details
+
+Example query to list applications for an organization:
+
+```
+organisationId: your_organization_id
+```
+
 ## How It Works
 
 ### MCP Protocol
@@ -120,6 +211,7 @@ The generator works by:
 - **Error Handling**: Detailed error reporting with status codes and response bodies
 - **Authentication**: Support for API keys, Bearer tokens, and Basic authentication
 - **Timeouts**: Configurable connection, read, and write timeouts
+- **Multiple Servers**: Support for selecting from multiple server URLs defined in the OpenAPI specification
 
 ## Environment Notes
 

@@ -22,6 +22,7 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import org.apache.commons.text.StringEscapeUtils;
 
@@ -31,31 +32,32 @@ import org.apache.commons.text.StringEscapeUtils;
 public class SwaggerToMcpGenerator {
 
     private static final String TEMPLATE_HEADER = """
-        ///usr/bin/env jbang --fresh "$0" "$@" ; exit $?
-        //DEPS dev.langchain4j:langchain4j:1.0.0-beta1
-        //DEPS dev.langchain4j:langchain4j-open-ai:1.0.0-beta1
-        //DEPS io.quarkiverse.mcp:quarkus-mcp-server-stdio:1.0.0.Beta4
-        //DEPS com.squareup.okhttp3:okhttp:4.11.0
-        //DEPS com.fasterxml.jackson.core:jackson-databind:2.16.0
-        //DEPS org.apache.commons:commons-text:1.10.0
-        
-        import com.fasterxml.jackson.databind.JsonNode;
-        import com.fasterxml.jackson.databind.ObjectMapper;
-        import com.fasterxml.jackson.databind.SerializationFeature;
-        import java.io.IOException;
-        import java.util.HashMap;
-        import java.util.Map;
-        import java.util.concurrent.TimeUnit;
-        import org.jboss.logging.Logger;
-        import org.apache.commons.text.StringEscapeUtils;
-        import io.quarkiverse.mcp.server.Tool;
-        import io.quarkiverse.mcp.server.ToolArg;
-        import okhttp3.HttpUrl;
-        import okhttp3.OkHttpClient;
-        import okhttp3.Request;
-        import okhttp3.Response;
-        import okhttp3.Interceptor;
-        import okhttp3.Credentials;
+///usr/bin/env jbang --fresh "$0" "$@" ; exit $?
+//DEPS dev.langchain4j:langchain4j:1.0.0-beta1
+//DEPS dev.langchain4j:langchain4j-open-ai:1.0.0-beta1
+//DEPS io.quarkiverse.mcp:quarkus-mcp-server-stdio:1.0.0.Beta4
+//DEPS com.squareup.okhttp3:okhttp:4.11.0
+//DEPS com.fasterxml.jackson.core:jackson-databind:2.16.0
+//DEPS org.apache.commons:commons-text:1.10.0
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
+import org.jboss.logging.Logger;
+import org.apache.commons.text.StringEscapeUtils;
+import io.quarkiverse.mcp.server.Tool;
+import io.quarkiverse.mcp.server.ToolArg;
+import okhttp3.HttpUrl;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
+import okhttp3.Interceptor;
+import okhttp3.Credentials;
         
         /**
          * An MCP server generated from an OpenAPI specification.
@@ -66,7 +68,37 @@ public class SwaggerToMcpGenerator {
             private static final Logger LOGGER = Logger.getLogger(%s.class);
             private final OkHttpClient client;
             private final ObjectMapper objectMapper;
-            private static final String BASE_URL = "%s";
+            
+            // Available server URLs from the OpenAPI specification
+            private static final List<String> SERVER_URLS = List.of(
+%s
+            );
+            
+            // Default to the first server URL
+            private static String BASE_URL = SERVER_URLS.get(0);
+            
+            // Allow setting the server URL via environment variable
+            static {
+                String serverIndex = System.getenv("SERVER_INDEX");
+                String serverUrl = System.getenv("SERVER_URL");
+                
+                if (serverUrl != null && !serverUrl.isEmpty()) {
+                    BASE_URL = serverUrl;
+                    LOGGER.info("Using server URL from environment: " + BASE_URL);
+                } else if (serverIndex != null && !serverIndex.isEmpty()) {
+                    try {
+                        int index = Integer.parseInt(serverIndex);
+                        if (index >= 0 && index < SERVER_URLS.size()) {
+                            BASE_URL = SERVER_URLS.get(index);
+                            LOGGER.info("Using server at index " + index + ": " + BASE_URL);
+                        } else {
+                            LOGGER.warn("Invalid server index: " + index + ". Using default server: " + BASE_URL);
+                        }
+                    } catch (NumberFormatException e) {
+                        LOGGER.warn("Invalid server index format. Using default server: " + BASE_URL);
+                    }
+                }
+            }
             
             public %s() {
                 // Initialize JSON object mapper with pretty printing
@@ -185,16 +217,39 @@ public class SwaggerToMcpGenerator {
 
     public static void main(String... args) {
         if (args.length < 2) {
-            System.out.println("Usage: SwaggerToMcpGenerator <swagger-file> <output-class-name>");
+            System.out.println("Usage: SwaggerToMcpGenerator <swagger-file> <output-class-name> [options]");
+            System.out.println("Options:");
+            System.out.println("  --server-index <index>  Index of the server to use from the OpenAPI specification (0-based)");
+            System.out.println("  --server-url <url>      URL of the server to use (overrides server-index)");
             System.exit(1);
         }
 
         String swaggerFile = args[0];
         String className = args[1];
         
+        // Parse optional arguments
+        Integer serverIndex = null;
+        String serverUrl = null;
+        
+        for (int i = 2; i < args.length; i++) {
+            if ("--server-index".equals(args[i]) && i + 1 < args.length) {
+                try {
+                    serverIndex = Integer.parseInt(args[i + 1]);
+                    i++; // Skip the next argument as we've processed it
+                } catch (NumberFormatException e) {
+                    System.err.println("Error: Invalid server index: " + args[i + 1]);
+                    System.exit(1);
+                }
+            } else if ("--server-url".equals(args[i]) && i + 1 < args.length) {
+                serverUrl = args[i + 1];
+                i++; // Skip the next argument as we've processed it
+            }
+        }
+        
         try {
             OpenAPI openAPI = parseSwaggerFile(swaggerFile);
-            String baseUrl = determineBaseUrl(openAPI);
+            List<String> serverUrls = getServerUrls(openAPI);
+            String baseUrl = determineBaseUrl(openAPI, serverUrls, serverIndex, serverUrl);
             
             List<MethodSpec> methods = new ArrayList<>();
             
@@ -230,7 +285,7 @@ public class SwaggerToMcpGenerator {
             }
             
             // Generate the MCP server class
-            generateMcpServerClass(swaggerFile, className, baseUrl, methods);
+            generateMcpServerClass(swaggerFile, className, baseUrl, serverUrls, methods);
             
             System.out.println("MCP server generated successfully: " + className + ".java");
             
@@ -248,124 +303,138 @@ public class SwaggerToMcpGenerator {
         return new OpenAPIParser().readLocation(swaggerFile, null, parseOptions).getOpenAPI();
     }
     
-    private static String determineBaseUrl(OpenAPI openAPI) {
-        System.out.println("DEBUG: Starting determineBaseUrl method");
+    private static List<String> getServerUrls(OpenAPI openAPI) {
+        List<String> serverUrls = new ArrayList<>();
         
         // First check if servers are defined at the root level
-        System.out.println("DEBUG: Checking for servers at root level");
-        if (openAPI.getServers() != null) {
-            System.out.println("DEBUG: Root servers list is not null");
-            System.out.println("DEBUG: Root servers count: " + openAPI.getServers().size());
-            
-            if (!openAPI.getServers().isEmpty()) {
-                String url = openAPI.getServers().get(0).getUrl();
-                System.out.println("DEBUG: Found root server URL: " + url);
-                
-                // If the root server URL is just "/", we should look for more specific server definitions
-                if (url != null && !url.equals("/")) {
-                    return url;
-                } else {
-                    System.out.println("DEBUG: Root server URL is just '/', looking for more specific server definitions");
-                    // Continue to check path and operation level servers
-                }
-            }
-        } else {
-            System.out.println("DEBUG: Root servers list is null");
+        if (openAPI.getServers() != null && !openAPI.getServers().isEmpty()) {
+            serverUrls = openAPI.getServers().stream()
+                .map(server -> server.getUrl())
+                .filter(url -> url != null && !url.equals("/"))
+                .collect(Collectors.toList());
         }
         
-        // If not found at root level, check for servers in paths
-        System.out.println("DEBUG: Checking for servers in paths");
-        if (openAPI.getPaths() != null && !openAPI.getPaths().isEmpty()) {
-            System.out.println("DEBUG: Paths count: " + openAPI.getPaths().size());
-            
+        // If no servers found at root level, check for servers in paths
+        if (serverUrls.isEmpty() && openAPI.getPaths() != null && !openAPI.getPaths().isEmpty()) {
             for (Map.Entry<String, PathItem> entry : openAPI.getPaths().entrySet()) {
-                String pathKey = entry.getKey();
                 PathItem pathItem = entry.getValue();
-                System.out.println("DEBUG: Examining path: " + pathKey);
                 
                 // Check for servers at the path level
-                System.out.println("DEBUG: Checking for servers at path level for: " + pathKey);
-                if (pathItem.getServers() != null) {
-                    System.out.println("DEBUG: Path servers list is not null for: " + pathKey);
-                    System.out.println("DEBUG: Path servers count: " + pathItem.getServers().size());
-                    
-                    if (!pathItem.getServers().isEmpty()) {
-                        String url = pathItem.getServers().get(0).getUrl();
-                        System.out.println("DEBUG: Found path server URL: " + url);
-                        return url;
+                if (pathItem.getServers() != null && !pathItem.getServers().isEmpty()) {
+                    serverUrls = pathItem.getServers().stream()
+                        .map(server -> server.getUrl())
+                        .filter(url -> url != null && !url.equals("/"))
+                        .collect(Collectors.toList());
+                    if (!serverUrls.isEmpty()) {
+                        break;
                     }
-                } else {
-                    System.out.println("DEBUG: Path servers list is null for: " + pathKey);
                 }
                 
                 // Check for servers at the operation level
-                System.out.println("DEBUG: Checking for servers at operation level for: " + pathKey);
-                
-                // Check GET operation
-                if (pathItem.getGet() != null) {
-                    System.out.println("DEBUG: GET operation exists for: " + pathKey);
-                    if (pathItem.getGet().getServers() != null) {
-                        System.out.println("DEBUG: GET operation servers list is not null");
-                        System.out.println("DEBUG: GET operation servers count: " + pathItem.getGet().getServers().size());
-                        
-                        if (!pathItem.getGet().getServers().isEmpty()) {
-                            String url = pathItem.getGet().getServers().get(0).getUrl();
-                            System.out.println("DEBUG: Found GET operation server URL: " + url);
-                            return url;
+                if (serverUrls.isEmpty()) {
+                    // Check GET operation
+                    if (pathItem.getGet() != null && pathItem.getGet().getServers() != null && 
+                        !pathItem.getGet().getServers().isEmpty()) {
+                        serverUrls = pathItem.getGet().getServers().stream()
+                            .map(server -> server.getUrl())
+                            .filter(url -> url != null && !url.equals("/"))
+                            .collect(Collectors.toList());
+                        if (!serverUrls.isEmpty()) {
+                            break;
                         }
-                    } else {
-                        System.out.println("DEBUG: GET operation servers list is null");
                     }
-                } else {
-                    System.out.println("DEBUG: No GET operation for: " + pathKey);
-                }
-                
-                // Check POST operation
-                if (pathItem.getPost() != null) {
-                    System.out.println("DEBUG: POST operation exists for: " + pathKey);
-                    if (pathItem.getPost().getServers() != null && !pathItem.getPost().getServers().isEmpty()) {
-                        String url = pathItem.getPost().getServers().get(0).getUrl();
-                        System.out.println("DEBUG: Found POST operation server URL: " + url);
-                        return url;
+                    
+                    // Check POST operation
+                    if (pathItem.getPost() != null && pathItem.getPost().getServers() != null && 
+                        !pathItem.getPost().getServers().isEmpty()) {
+                        serverUrls = pathItem.getPost().getServers().stream()
+                            .map(server -> server.getUrl())
+                            .filter(url -> url != null && !url.equals("/"))
+                            .collect(Collectors.toList());
+                        if (!serverUrls.isEmpty()) {
+                            break;
+                        }
                     }
-                }
-                
-                // Check PUT operation
-                if (pathItem.getPut() != null) {
-                    System.out.println("DEBUG: PUT operation exists for: " + pathKey);
-                    if (pathItem.getPut().getServers() != null && !pathItem.getPut().getServers().isEmpty()) {
-                        String url = pathItem.getPut().getServers().get(0).getUrl();
-                        System.out.println("DEBUG: Found PUT operation server URL: " + url);
-                        return url;
+                    
+                    // Check PUT operation
+                    if (pathItem.getPut() != null && pathItem.getPut().getServers() != null && 
+                        !pathItem.getPut().getServers().isEmpty()) {
+                        serverUrls = pathItem.getPut().getServers().stream()
+                            .map(server -> server.getUrl())
+                            .filter(url -> url != null && !url.equals("/"))
+                            .collect(Collectors.toList());
+                        if (!serverUrls.isEmpty()) {
+                            break;
+                        }
                     }
-                }
-                
-                // Check DELETE operation
-                if (pathItem.getDelete() != null) {
-                    System.out.println("DEBUG: DELETE operation exists for: " + pathKey);
-                    if (pathItem.getDelete().getServers() != null && !pathItem.getDelete().getServers().isEmpty()) {
-                        String url = pathItem.getDelete().getServers().get(0).getUrl();
-                        System.out.println("DEBUG: Found DELETE operation server URL: " + url);
-                        return url;
+                    
+                    // Check DELETE operation
+                    if (pathItem.getDelete() != null && pathItem.getDelete().getServers() != null && 
+                        !pathItem.getDelete().getServers().isEmpty()) {
+                        serverUrls = pathItem.getDelete().getServers().stream()
+                            .map(server -> server.getUrl())
+                            .filter(url -> url != null && !url.equals("/"))
+                            .collect(Collectors.toList());
+                        if (!serverUrls.isEmpty()) {
+                            break;
+                        }
                     }
-                }
-                
-                // Check PATCH operation
-                if (pathItem.getPatch() != null) {
-                    System.out.println("DEBUG: PATCH operation exists for: " + pathKey);
-                    if (pathItem.getPatch().getServers() != null && !pathItem.getPatch().getServers().isEmpty()) {
-                        String url = pathItem.getPatch().getServers().get(0).getUrl();
-                        System.out.println("DEBUG: Found PATCH operation server URL: " + url);
-                        return url;
+                    
+                    // Check PATCH operation
+                    if (pathItem.getPatch() != null && pathItem.getPatch().getServers() != null && 
+                        !pathItem.getPatch().getServers().isEmpty()) {
+                        serverUrls = pathItem.getPatch().getServers().stream()
+                            .map(server -> server.getUrl())
+                            .filter(url -> url != null && !url.equals("/"))
+                            .collect(Collectors.toList());
+                        if (!serverUrls.isEmpty()) {
+                            break;
+                        }
                     }
                 }
             }
-        } else {
-            System.out.println("DEBUG: Paths list is null or empty");
         }
         
-        System.out.println("DEBUG: No servers found at any level, using hardcoded Open-Meteo API URL");
-        return "https://api.open-meteo.com"; // Hardcoded Open-Meteo API URL
+        // If still no servers found, use a default URL
+        if (serverUrls.isEmpty()) {
+            serverUrls.add("https://api.open-meteo.com"); // Default URL as fallback
+        }
+        
+        return serverUrls;
+    }
+    
+    private static String determineBaseUrl(OpenAPI openAPI, List<String> serverUrls, Integer serverIndex, String serverUrl) {
+        // If a specific server URL is provided, use it
+        if (serverUrl != null) {
+            System.out.println("Using specified server URL: " + serverUrl);
+            return serverUrl;
+        }
+        
+        // If a server index is provided, use it if valid
+        if (serverIndex != null) {
+            if (serverIndex >= 0 && serverIndex < serverUrls.size()) {
+                String url = serverUrls.get(serverIndex);
+                System.out.println("Using server at index " + serverIndex + ": " + url);
+                return url;
+            } else {
+                System.err.println("Warning: Invalid server index: " + serverIndex + ". Using default server.");
+            }
+        }
+        
+        // If multiple servers are available and none was explicitly selected, emit a warning
+        if (serverUrls.size() > 1 && serverIndex == null && serverUrl == null) {
+            System.err.println("Warning: Multiple servers defined in the OpenAPI specification, but none explicitly selected.");
+            System.err.println("Available servers:");
+            for (int i = 0; i < serverUrls.size(); i++) {
+                System.err.println("  [" + i + "] " + serverUrls.get(i));
+            }
+            System.err.println("Using the first server by default. To select a specific server, use --server-index or --server-url.");
+        }
+        
+        // Use the first server URL by default
+        String url = serverUrls.get(0);
+        System.out.println("Using default server: " + url);
+        return url;
     }
     
     private static MethodSpec processOperation(String httpMethod, String path, Operation operation) {
@@ -449,16 +518,25 @@ public class SwaggerToMcpGenerator {
     }
     
     private static void generateMcpServerClass(String swaggerFile, String className, String baseUrl, 
-                                              List<MethodSpec> methods) throws IOException {
+                                              List<String> serverUrls, List<MethodSpec> methods) throws IOException {
         File outputFile = new File(className + ".java");
         
         try (PrintWriter writer = new PrintWriter(new FileWriter(outputFile))) {
+            // Build the server URLs string for the template
+            StringBuilder serverUrlsBuilder = new StringBuilder();
+            for (int i = 0; i < serverUrls.size(); i++) {
+                serverUrlsBuilder.append("                \"").append(serverUrls.get(i)).append("\"");
+                if (i < serverUrls.size() - 1) {
+                    serverUrlsBuilder.append(",\n");
+                }
+            }
+            
             // Write header
             writer.printf(TEMPLATE_HEADER, 
                 new File(swaggerFile).getName(),
                 className,
                 className,
-                baseUrl,
+                serverUrlsBuilder.toString(),
                 className);
             
             // Write methods
