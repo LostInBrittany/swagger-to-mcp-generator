@@ -1,0 +1,76 @@
+# Quarkus - Compiled output
+/target/
+/quarkus-app/
+/classes/
+/checkouts/
+/.quarkus/
+
+# JBang
+.jbang/
+/lib/
+/.jbang-cache/
+
+# Maven
+.mvn/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# Gradle
+.gradle/
+build/
+gradle-app.setting
+!gradle-wrapper.jar
+.gradletasknamecache
+
+# Eclipse
+.project
+.classpath
+.settings/
+bin/
+
+# IntelliJ IDEA
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+.idea_modules/
+
+# NetBeans
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+# VS Code
+.vscode/
+.code-workspace
+
+# OS specific
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Generated MCP servers
+*McpServer.java
+!SwaggerToMcpGenerator.java
+
+# Logs
+*.log
+log/
+logs/
+
+# Temporary files
+*.tmp
+*.bak
+*.orig
+*~
